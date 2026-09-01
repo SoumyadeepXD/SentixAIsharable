@@ -943,7 +943,7 @@ with tab_deploy:
         2. **Deploy on Streamlit Cloud**:
            - Log in to [share.streamlit.io](https://share.streamlit.io) using your GitHub account.
            - Click **New app**.
-           - Select the repository: **`govindshaw67/SentixAI`**
+           - Select the repository: **`SoumyadeepXD/SentixAIsharable`**
            - Set branch: **`main`**
            - Set entrypoint file path: **`streamlit_app.py`**
            - Specify custom app URL subdomain under **Advanced settings** if desired.

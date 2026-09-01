@@ -117,7 +117,8 @@ data/                     Prepared emotion data and sample batch CSV
 ## Installation
 
 ```bash
-cd /Users/govindprasadshaw/Desktop/DL_Projects
+git clone https://github.com/SoumyadeepXD/SentixAIsharable.git
+cd SentixAIsharable
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
@@ -129,7 +130,7 @@ python -m pip install -r requirements.txt
 Train sentiment:
 
 ```bash
-python train_sentixai.py --csv "/Users/govindprasadshaw/Downloads/DATASETS/IMDB Dataset.csv" --output-dir outputs
+python train_sentixai.py --csv "data/IMDB Dataset.csv" --output-dir outputs
 ```
 
 Prepare and train emotion:
@@ -142,7 +143,7 @@ python train_sentixai.py --csv data/goemotions_target_emotions.csv --text-column
 Run the controlled comparison study:
 
 ```bash
-python run_experiments.py --config experiment_config.json --csv "/Users/govindprasadshaw/Downloads/DATASETS/IMDB Dataset.csv"
+python run_experiments.py --config experiment_config.json --csv "data/IMDB Dataset.csv"
 ```
 
 It writes report-ready results to `outputs/experiments/`, including comparison CSV/JSON files, charts, checkpoints, and per-run confusion matrices.
@@ -190,7 +191,7 @@ Streamlit Community Cloud is 100% free, runs native PyTorch without memory/bundl
 2. Go to [share.streamlit.io](https://share.streamlit.io) and sign in with GitHub.
 3. Click **"New App"** (or **"Create app"**).
 4. Select:
-   - **Repository:** `govindshaw67/SentixAI`
+   - **Repository:** `SoumyadeepXD/SentixAIsharable`
    - **Branch:** `main`
    - **Main file path:** `streamlit_app.py`
 5. Click **"Deploy!"** Your public sharable link will be live in 1-2 minutes!
