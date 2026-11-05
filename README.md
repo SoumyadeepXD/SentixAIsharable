@@ -62,6 +62,31 @@ Tokens → Embedding → BiLSTM → Additive Attention → Dropout → Dense log
 
 The BiLSTM reads token sequences in both directions. Additive attention gives each non-padding token a normalized weight and pools the BiLSTM states into a context vector. These actual weights are exposed in inference output.
 
+## TextCNN architecture and pooling modes
+
+```text
+Tokens → Embedding → Parallel Conv1d (length-preserving) → Concat → Pooling (Attention or Max) → Dropout → Dense logits → Softmax
+```
+
+TextCNN extracts local n-gram feature maps via parallel 1D convolutions (default kernel sizes 3, 4, and 5 with length-preserving padding) over word embeddings. SentixAI supports two pooling strategies conforming to the `(logits, token_weights)` contract:
+- **Additive Attention (`textcnn`):** Reuses parameterized additive attention over the concatenated multi-filter feature sequence, yielding dynamic token weights that sum to 1 over non-padding tokens.
+- **Masked Global Max-Pooling (`textcnn_max`):** Performs masked max-pooling across time and returns token weights defined by the proportion of feature channels whose maximal response landed on each token.
+
+### Training TextCNN
+```bash
+python train_sentixai.py --csv "data/IMDB Dataset.csv" --model-type textcnn --output-dir outputs/cnn_sentiment
+```
+For max-pooling:
+```bash
+python train_sentixai.py --csv "data/IMDB Dataset.csv" --model-type textcnn_max --output-dir outputs/cnn_max_sentiment
+```
+
+### Architecture Comparison
+TextCNN models (`textcnn` and `textcnn_max`) are evaluated side-by-side with MLP, LSTM, and BiLSTM baselines:
+```bash
+python run_experiments.py --config experiment_config.json --csv "data/IMDB Dataset.csv"
+```
+
 ## Emotion detection
 
 Emotion is an independently trained model with its own vocabulary, checkpoint, and evaluation report; it is not trained from IMDB sentiment labels.
@@ -76,7 +101,7 @@ Attention is evidence of model focus, not a causal guarantee. LIME and SHAP are 
 
 ## Model comparison and hyperparameter experiments
 
-`run_experiments.py` trains MLP, LSTM, BiLSTM, and BiLSTM-attention models on the same stratified split and training vocabulary. `experiment_config.json` controls learning rate, batch size, epochs, dropout, hidden units, embedding dimensions, optimizer, and BiLSTM-attention variants. The best run is selected by **macro-F1**, rather than accuracy alone.
+`run_experiments.py` trains MLP, LSTM, BiLSTM, BiLSTM-attention, and TextCNN (attention & max pooling) models on the same stratified split and training vocabulary. `experiment_config.json` controls learning rate, batch size, epochs, dropout, hidden units / filter counts, kernel sizes, embedding dimensions, optimizer, and architecture variants. The best run is selected by **macro-F1**, rather than accuracy alone.
 
 ## Evaluation metrics
 
@@ -86,12 +111,28 @@ Each run saves accuracy, precision, recall, weighted F1, macro-F1, classificatio
 
 These are actual held-out test results from completed training runs:
 
+### Production Model Results
+
 | Model | Dataset | Accuracy | Weighted precision | Weighted recall | Weighted F1 |
 |---|---:|---:|---:|---:|---:|
 | BiLSTM + Attention sentiment | IMDB | 90.02% | 90.02% | 90.02% | 90.02% |
 | BiLSTM + Attention emotion | Filtered GoEmotions | 73.44% | 76.77% | 73.44% | 74.37% |
 
-The controlled architecture-comparison study is configured but has not yet produced checked-in results. Run it before claiming a best architecture.
+### Controlled Architecture Comparison Study (IMDB Full Dataset, 3 Seeds)
+
+Evaluated across seeds `[42, 43, 44]` on 49,582 reviews (Train: 39,665, Validation: 4,958, Test: 4,959) using identical splits and vocabulary. Best model selected by validation macro-F1:
+
+| Model Architecture | Val Macro-F1 (Mean ± Std) | Test Macro-F1 (Mean ± Std) | Test Accuracy (Mean ± Std) | Mean Train Time |
+|---|---|---|---|---|
+| **BiLSTM + Attention** *(Best)* | **0.8795 ± 0.0044** | **0.8810 ± 0.0030** | **88.11% ± 0.31%** | 103.4s |
+| BiLSTM | 0.8773 ± 0.0035 | 0.8805 ± 0.0066 | 88.06% ± 0.67% | 109.2s |
+| **TextCNN (Attention Pooling)** | 0.8723 ± 0.0012 | 0.8735 ± 0.0055 | 87.37% ± 0.56% | **87.1s** |
+| MLP Baseline | 0.8701 ± 0.0058 | 0.8734 ± 0.0076 | 87.34% ± 0.75% | **31.8s** |
+| TextCNN (Filters 64, LR 0.0005) | 0.8527 ± 0.0036 | 0.8554 ± 0.0080 | 85.56% ± 0.81% | 83.2s |
+| **TextCNN (Global Max-Pooling)** | 0.8448 ± 0.0081 | 0.8478 ± 0.0106 | 84.82% ± 1.02% | 88.3s |
+| LSTM Baseline | 0.8133 ± 0.0398 | 0.8161 ± 0.0372 | 81.66% ± 3.75% | 70.2s |
+
+Full raw multi-seed runs are saved in `outputs/experiments/seed_runs.csv` and summary metrics in `outputs/experiments/comparison_results.csv`. Visual comparison charts are in `outputs/experiments/model_comparison_chart.png` and `hyperparameter_chart.png`.
 
 ## Dashboard
 

@@ -1,4 +1,4 @@
-"""Train and evaluate the SentixAI BiLSTM-attention sentiment classifier."""
+"""Train and evaluate SentixAI classifiers (BiLSTM-attention and TextCNN)."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ from torch.optim import AdamW
 from torch.utils.data import DataLoader
 
 from sentixai_data import SentimentDataset, build_vocabulary, load_and_split_data
-from sentixai_model import BiLSTMAttentionClassifier
+from sentixai_model import build_model
 
 
 def set_seed(seed: int) -> None:
@@ -106,7 +106,11 @@ def main() -> None:
     parser.add_argument("--text-column", default="review", help="Text column name")
     parser.add_argument("--label-column", default="sentiment", help="Class-label column name")
     parser.add_argument("--output-dir", default="outputs", help="Directory for model artifacts and results")
-    parser.add_argument("--model-name", default="bilstm_attention.pt", help="Checkpoint filename")
+    parser.add_argument("--model-type", choices=["bilstm_attention", "textcnn", "textcnn_max", "bilstm", "cnn"], default="bilstm_attention", help="Model architecture")
+    parser.add_argument("--model-name", default=None, help="Checkpoint filename (defaults per model type)")
+    parser.add_argument("--num-filters", type=int, default=128, help="Number of convolutional filters per kernel size (TextCNN)")
+    parser.add_argument("--kernel-sizes", default="3,4,5", help="Comma-separated kernel sizes for TextCNN (e.g. '3,4,5')")
+    parser.add_argument("--pooling", choices=["attention", "max"], default="attention", help="Pooling mode for TextCNN")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--max-length", type=int, default=300)
     parser.add_argument("--max-vocab-size", type=int, default=30000)
@@ -121,6 +125,16 @@ def main() -> None:
     parser.add_argument("--weight-decay", type=float, default=0.0001)
     parser.add_argument("--device", choices=["cpu", "mps", "auto"], default="cpu")
     args = parser.parse_args()
+
+    model_type = args.model_type.lower().strip()
+    if args.model_name is not None:
+        model_name = args.model_name
+    elif model_type in {"bilstm_attention", "bilstm"}:
+        model_name = "bilstm_attention.pt"
+    elif model_type in {"textcnn_max", "cnn_max"}:
+        model_name = "textcnn_max.pt"
+    else:
+        model_name = "textcnn.pt"
 
     set_seed(args.seed)
     device = choose_device(args.device)
@@ -139,12 +153,31 @@ def main() -> None:
     validation_loader = DataLoader(validation_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, num_workers=0)
 
-    model_config = {
-        "vocab_size": len(vocabulary), "num_classes": len(prepared.class_names),
-        "embedding_dim": args.embedding_dim, "hidden_dim": args.hidden_dim,
-        "dropout": args.dropout, "padding_idx": vocabulary["<PAD>"],
-    }
-    model = BiLSTMAttentionClassifier(**model_config).to(device)
+    parsed_kernel_sizes = tuple(int(k.strip()) for k in args.kernel_sizes.split(",") if k.strip())
+    if model_type in {"bilstm_attention", "bilstm"}:
+        model_config = {
+            "vocab_size": len(vocabulary),
+            "num_classes": len(prepared.class_names),
+            "embedding_dim": args.embedding_dim,
+            "hidden_dim": args.hidden_dim,
+            "dropout": args.dropout,
+            "padding_idx": vocabulary["<PAD>"],
+        }
+    else:
+        pooling_mode = "max" if model_type in {"textcnn_max", "cnn_max"} else args.pooling
+        model_config = {
+            "vocab_size": len(vocabulary),
+            "num_classes": len(prepared.class_names),
+            "embedding_dim": args.embedding_dim,
+            "num_filters": args.num_filters,
+            "kernel_sizes": parsed_kernel_sizes,
+            "dropout": args.dropout,
+            "padding_idx": vocabulary["<PAD>"],
+            "pooling": pooling_mode,
+            "attention_dim": args.hidden_dim,
+        }
+
+    model = build_model(model_type, **model_config).to(device)
     criterion = nn.CrossEntropyLoss()
     optimizer = AdamW(model.parameters(), lr=args.learning_rate, weight_decay=args.weight_decay)
 
@@ -175,19 +208,31 @@ def main() -> None:
     test_loss, test_labels, test_predictions = run_epoch(model, test_loader, criterion, device)
     test_metrics = metrics_dict(test_labels, test_predictions)
     report = classification_report(test_labels, test_predictions, target_names=prepared.class_names, zero_division=0, output_dict=True)
-    checkpoint = {"model_state": model.state_dict(), "model_config": model_config,
-                  "class_names": prepared.class_names, "max_length": args.max_length}
-    torch.save(checkpoint, artifacts_dir / args.model_name)
+    checkpoint = {
+        "model_state": model.state_dict(),
+        "model_type": model_type,
+        "model_config": model_config,
+        "class_names": prepared.class_names,
+        "max_length": args.max_length,
+    }
+    torch.save(checkpoint, artifacts_dir / model_name)
     (artifacts_dir / "vocabulary.json").write_text(json.dumps(vocabulary, ensure_ascii=False), encoding="utf-8")
-    results = {"test_loss": test_loss, "test_metrics": test_metrics, "classification_report": report,
-               "class_names": prepared.class_names, "split_sizes": {"train": len(train_dataset), "validation": len(validation_dataset), "test": len(test_dataset)},
-               "device": str(device), "history": history}
+    results = {
+        "test_loss": test_loss,
+        "test_metrics": test_metrics,
+        "classification_report": report,
+        "class_names": prepared.class_names,
+        "split_sizes": {"train": len(train_dataset), "validation": len(validation_dataset), "test": len(test_dataset)},
+        "device": str(device),
+        "history": history,
+        "model_type": model_type,
+    }
     (results_dir / "evaluation.json").write_text(json.dumps(results, indent=2), encoding="utf-8")
     save_plots(history, test_labels, test_predictions, prepared.class_names, results_dir)
     print("\nTest results:")
     print(json.dumps({"loss": test_loss, **test_metrics}, indent=2))
     print(classification_report(test_labels, test_predictions, target_names=prepared.class_names, zero_division=0))
-    print(f"Saved model to {artifacts_dir / args.model_name}")
+    print(f"Saved model to {artifacts_dir / model_name}")
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 __pycache__/
 *.py[cod]
 .DS_Store
+.venv
 .venv/
 .env
 .env.*
@@ -12,6 +13,10 @@ outputs/*
 !outputs/artifacts/
 !outputs/artifacts/bilstm_attention.pt
 !outputs/artifacts/vocabulary.json
+!outputs/artifacts/textcnn.pt
+!outputs/artifacts/textcnn_vocabulary.json
+!outputs/artifacts/textcnn_max.pt
+!outputs/artifacts/textcnn_max_vocabulary.json
 !outputs/results/
 !outputs/results/evaluation.json
 !outputs/results/confusion_matrix.png
@@ -25,3 +30,9 @@ outputs/emotion/*
 !outputs/emotion/results/evaluation.json
 !outputs/emotion/results/confusion_matrix.png
 !outputs/emotion/results/training_curves.png
+!outputs/experiments/
+outputs/experiments/*
+!outputs/experiments/comparison_results.csv
+!outputs/experiments/seed_runs.csv
+!outputs/experiments/model_comparison_chart.png
+!outputs/experiments/hyperparameter_chart.png
