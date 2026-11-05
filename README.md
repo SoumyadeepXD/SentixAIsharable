@@ -10,7 +10,7 @@
 
 **An end-to-end, reproducible Explainable AI (XAI) platform featuring multi-architecture deep learning (BiLSTM + Attention, TextCNN with Attention and Max Pooling), model transparency (Additive Attention, LIME, Kernel SHAP), and dual deployment interfaces (FastAPI & Streamlit).**
 
-[Live Web Demo](https://sentixai-01cn.onrender.com) • [Quickstart](#-quickstart) • [Model Architectures](#-model-architectures) • [Empirical Benchmark](#-empirical-benchmark-results) • [API Reference](#-api-endpoints) • [Deployment](#-cloud-deployment-guide)
+[Live Web Demo]([https://sentixai-01cn.onrender.com](https://senxtixai.streamlit.app/)) • [Quickstart](#-quickstart) • [Model Architectures](#-model-architectures) • [Empirical Benchmark](#-empirical-benchmark-results) • [API Reference](#-api-endpoints) • [Deployment](#-cloud-deployment-guide)
 
 </div>
 
