@@ -9,7 +9,7 @@ from pathlib import Path
 import torch
 
 from sentixai_data import clean_and_tokenize, encode_tokens
-from sentixai_model import BiLSTMAttentionClassifier
+from sentixai_model import build_model
 
 
 def load_checkpoint(path: Path, device: torch.device):
@@ -30,9 +30,19 @@ def main() -> None:
     device = torch.device(args.device)
     model_dir = Path(args.model_dir)
     checkpoint = load_checkpoint(model_dir / args.model_name, device)
-    vocabulary = json.loads((model_dir / "vocabulary.json").read_text(encoding="utf-8"))
-    model = BiLSTMAttentionClassifier(**checkpoint["model_config"]).to(device)
-    model.load_state_dict(checkpoint["model_state"])
+    if "vocabulary" in checkpoint:
+        vocabulary = checkpoint["vocabulary"]
+    elif (model_dir / f"{Path(args.model_name).stem}_vocabulary.json").exists():
+        vocabulary = json.loads((model_dir / f"{Path(args.model_name).stem}_vocabulary.json").read_text(encoding="utf-8"))
+    else:
+        vocabulary = json.loads((model_dir / "vocabulary.json").read_text(encoding="utf-8"))
+    model_type = checkpoint.get("model_type", checkpoint.get("model", "bilstm_attention"))
+    model_config = dict(checkpoint.get("model_config", checkpoint.get("config", {})))
+    vocab_size = model_config.pop("vocab_size", len(vocabulary))
+    num_classes = model_config.pop("num_classes", len(checkpoint["class_names"]))
+    model = build_model(model_type, vocab_size=vocab_size, num_classes=num_classes, **model_config).to(device)
+    state_dict = checkpoint.get("model_state", checkpoint.get("state_dict"))
+    model.load_state_dict(state_dict)
     model.eval()
 
     tokens = clean_and_tokenize(args.text)

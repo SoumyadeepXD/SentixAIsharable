@@ -5,7 +5,7 @@ from __future__ import annotations
 import torch
 from torch import nn
 
-from sentixai_model import AdditiveAttention
+from sentixai_model import AdditiveAttention, TextCNNClassifier
 
 
 class MLPClassifier(nn.Module):
@@ -74,4 +74,73 @@ class BiLSTMAttentionComparison(nn.Module):
         return self.classifier(context), weights
 
 
-MODELS = {"mlp": MLPClassifier, "lstm": LSTMClassifier, "bilstm": BiLSTMClassifier, "bilstm_attention": BiLSTMAttentionComparison}
+class TextCNNComparison(TextCNNClassifier):
+    """TextCNN with additive attention for the controlled comparison."""
+    def __init__(
+        self,
+        vocab_size,
+        num_classes,
+        embedding_dim=128,
+        num_filters=128,
+        kernel_sizes=(3, 4, 5),
+        dropout=0.35,
+        padding_idx=0,
+        pooling="attention",
+        attention_dim=128,
+        hidden_dim=None,
+        **kwargs,
+    ):
+        if hidden_dim is not None and "num_filters" not in kwargs:
+            num_filters = hidden_dim
+        super().__init__(
+            vocab_size=vocab_size,
+            num_classes=num_classes,
+            embedding_dim=embedding_dim,
+            num_filters=num_filters,
+            kernel_sizes=kernel_sizes,
+            dropout=dropout,
+            padding_idx=padding_idx,
+            pooling=pooling,
+            attention_dim=attention_dim,
+        )
+
+
+class TextCNNMaxComparison(TextCNNComparison):
+    """TextCNN with masked global max pooling for the controlled comparison."""
+    def __init__(
+        self,
+        vocab_size,
+        num_classes,
+        embedding_dim=128,
+        num_filters=128,
+        kernel_sizes=(3, 4, 5),
+        dropout=0.35,
+        padding_idx=0,
+        pooling="max",
+        attention_dim=128,
+        hidden_dim=None,
+        **kwargs,
+    ):
+        super().__init__(
+            vocab_size=vocab_size,
+            num_classes=num_classes,
+            embedding_dim=embedding_dim,
+            num_filters=num_filters,
+            kernel_sizes=kernel_sizes,
+            dropout=dropout,
+            padding_idx=padding_idx,
+            pooling="max",
+            attention_dim=attention_dim,
+            hidden_dim=hidden_dim,
+            **kwargs,
+        )
+
+
+MODELS = {
+    "mlp": MLPClassifier,
+    "lstm": LSTMClassifier,
+    "bilstm": BiLSTMClassifier,
+    "bilstm_attention": BiLSTMAttentionComparison,
+    "textcnn": TextCNNComparison,
+    "textcnn_max": TextCNNMaxComparison,
+}

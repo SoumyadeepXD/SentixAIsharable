@@ -111,12 +111,15 @@ st.markdown(
 
 
 @st.cache_resource(show_spinner="Loading Sentiment Classifier...")
-def get_sentiment_model() -> SavedTextClassifier:
-    """Load sentiment BiLSTM attention model with caching."""
+def get_sentiment_model(model_name: str = "bilstm_attention.pt") -> SavedTextClassifier:
+    """Load sentiment model with caching; supports BiLSTM and TextCNN."""
     artifact_dir = ROOT / "outputs/artifacts"
-    if not (artifact_dir / "bilstm_attention.pt").exists():
-        artifact_dir = ROOT
-    return SavedTextClassifier(artifact_dir, "bilstm_attention.pt")
+    if not (artifact_dir / model_name).exists():
+        if (ROOT / model_name).exists():
+            artifact_dir = ROOT
+        elif (artifact_dir / "bilstm_attention.pt").exists():
+            model_name = "bilstm_attention.pt"
+    return SavedTextClassifier(artifact_dir, model_name)
 
 
 @st.cache_resource(show_spinner="Loading Emotion Classifier...")
@@ -173,10 +176,25 @@ with st.sidebar:
     st.caption("SentixAI Platform Version 4.0")
     st.divider()
 
+    st.markdown("#### Model Architecture")
+    sentiment_arch_options = {
+        "BiLSTM + Attention (Default)": "bilstm_attention.pt",
+        "TextCNN (Attention Pooling)": "textcnn.pt",
+        "TextCNN (Global Max Pooling)": "textcnn_max.pt",
+    }
+    selected_arch_label = st.selectbox(
+        "Sentiment Architecture",
+        options=list(sentiment_arch_options.keys()),
+        index=0,
+        help="Select the neural architecture used for sentiment classification.",
+    )
+    selected_model_name = sentiment_arch_options[selected_arch_label]
+
     st.markdown("#### Model Status")
     try:
-        sent_clf = get_sentiment_model()
-        st.success("Sentiment Model: Active (IMDB, 90.02% Accuracy)")
+        sent_clf = get_sentiment_model(selected_model_name)
+        active_type = getattr(sent_clf, "model_type", "bilstm_attention")
+        st.success(f"Sentiment Model: Active ({active_type})")
     except Exception as exc:
         st.error(f"Sentiment Model: Offline ({exc})")
         sent_clf = None
@@ -388,9 +406,9 @@ with tab_predict:
                         "Comparative analysis of model-internal attention weights and local post-hoc interpretability techniques."
                     )
 
-                    # 1. Additive Attention
+                    # 1. Additive Attention / Token Importance
                     if show_attention:
-                        st.markdown("#### 1. BiLSTM Additive Attention Layer")
+                        st.markdown("#### 1. Attention & Token Importance Layer")
                         attn_tokens = sent_pred.get("attention_tokens", [])
                         if attn_tokens:
                             max_weight = max((item["weight"] for item in attn_tokens), default=0.001)
@@ -417,7 +435,7 @@ with tab_predict:
                                 unsafe_allow_html=True,
                             )
                             st.caption(
-                                "Token background intensity represents normalized softmax attention weights allocated during sequence context pooling."
+                                "Token background intensity represents normalized token importance weights allocated during sequence context pooling."
                             )
 
                             col_attn_chart, col_attn_table = st.columns([3, 2])

@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from functools import lru_cache
 import json
+from functools import lru_cache
 from pathlib import Path
 from uuid import uuid4
 
@@ -28,16 +28,18 @@ class PredictionRequest(BaseModel):
     include_emotion: bool = True
     lime_samples: int = Field(default=500, ge=100, le=2000)
     shap_samples: int = Field(default=160, ge=50, le=500)
+    model_name: str | None = None
+    emotion_model_name: str | None = None
 
 
 @lru_cache
-def sentiment_model() -> SavedTextClassifier:
-    return SavedTextClassifier(ROOT / "outputs/artifacts", "bilstm_attention.pt")
+def sentiment_model(model_name: str = "bilstm_attention.pt") -> SavedTextClassifier:
+    return SavedTextClassifier(ROOT / "outputs/artifacts", model_name)
 
 
 @lru_cache
-def emotion_model() -> SavedTextClassifier:
-    return SavedTextClassifier(ROOT / "outputs/emotion/artifacts", "emotion_bilstm_attention.pt")
+def emotion_model(model_name: str = "emotion_bilstm_attention.pt") -> SavedTextClassifier:
+    return SavedTextClassifier(ROOT / "outputs/emotion/artifacts", model_name)
 
 
 def explain(classifier: SavedTextClassifier, prediction: dict, text: str, methods: list[str], request: PredictionRequest) -> dict:
@@ -62,8 +64,26 @@ def dashboard() -> FileResponse:
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "sentiment_model": (ROOT / "outputs/artifacts/bilstm_attention.pt").exists(),
-            "emotion_model": (ROOT / "outputs/emotion/artifacts/emotion_bilstm_attention.pt").exists()}
+    return {
+        "status": "ok",
+        "sentiment_model": (ROOT / "outputs/artifacts/bilstm_attention.pt").exists(),
+        "emotion_model": (ROOT / "outputs/emotion/artifacts/emotion_bilstm_attention.pt").exists(),
+        "cnn_model": (ROOT / "outputs/artifacts/textcnn.pt").exists(),
+    }
+
+
+@app.get("/api/models")
+def list_available_models() -> dict:
+    sentiment_dir = ROOT / "outputs/artifacts"
+    sentiment_models = [p.name for p in sentiment_dir.glob("*.pt")] if sentiment_dir.exists() else []
+    emotion_dir = ROOT / "outputs/emotion/artifacts"
+    emotion_models = [p.name for p in emotion_dir.glob("*.pt")] if emotion_dir.exists() else []
+    return {
+        "sentiment_models": sorted(sentiment_models) or ["bilstm_attention.pt"],
+        "emotion_models": sorted(emotion_models) or ["emotion_bilstm_attention.pt"],
+        "default_sentiment": "bilstm_attention.pt",
+        "default_emotion": "emotion_bilstm_attention.pt",
+    }
 
 
 def load_results(path: Path) -> dict:
@@ -103,7 +123,8 @@ def confusion_matrix_image(model: str) -> FileResponse:
 @app.post("/api/predict")
 def predict(request: PredictionRequest) -> dict:
     try:
-        sentiment_classifier = sentiment_model()
+        sentiment_name = request.model_name or "bilstm_attention.pt"
+        sentiment_classifier = sentiment_model(sentiment_name)
         sentiment = sentiment_classifier.predict(request.text)
         response = {
             "sentiment": sentiment,
@@ -111,7 +132,8 @@ def predict(request: PredictionRequest) -> dict:
             "explanation": {"sentiment": explain(sentiment_classifier, sentiment, request.text, request.methods, request)},
         }
         if request.include_emotion:
-            emotion_classifier = emotion_model()
+            emotion_name = request.emotion_model_name or "emotion_bilstm_attention.pt"
+            emotion_classifier = emotion_model(emotion_name)
             emotion = emotion_classifier.predict(request.text)
             response["emotion"] = emotion
             response["emotion_confidence"] = emotion["confidence"]
@@ -122,7 +144,10 @@ def predict(request: PredictionRequest) -> dict:
 
 
 @app.post("/api/batch")
-async def batch_predict(file: UploadFile = File(...)) -> dict:
+async def batch_predict(
+    file: UploadFile = File(...),
+    model_name: str = "bilstm_attention.pt",
+) -> dict:
     """Validate review CSV, run both saved classifiers, and persist download output."""
     if not file.filename or not file.filename.lower().endswith(".csv"):
         raise HTTPException(status_code=400, detail="Upload a .csv file.")
@@ -142,8 +167,10 @@ async def batch_predict(file: UploadFile = File(...)) -> dict:
         preview = ", ".join(invalid_rows[:8])
         raise HTTPException(status_code=400, detail=f"Review column has empty value(s) at CSV row(s): {preview}.")
     try:
-        sentiment_predictions = sentiment_model().predict_many(reviews)
-        emotion_predictions = emotion_model().predict_many(reviews)
+        sentiment_classifier = sentiment_model(model_name)
+        emotion_classifier = emotion_model()
+        sentiment_predictions = sentiment_classifier.predict_many(reviews)
+        emotion_predictions = emotion_classifier.predict_many(reviews)
     except (FileNotFoundError, ValueError, OSError, RuntimeError) as error:
         raise HTTPException(status_code=400, detail=f"Unable to process reviews: {error}") from error
 
@@ -165,8 +192,8 @@ async def batch_predict(file: UploadFile = File(...)) -> dict:
     return {
         "batch_id": batch_id,
         "total_reviews": len(results),
-        "sentiment_counts": {label: int((results["sentiment"] == label).sum()) if label in sentiment_model().class_names else None for label in sentiment_labels},
-        "emotion_counts": {label: int((results["emotion"] == label).sum()) if label in emotion_model().class_names else None for label in emotion_labels},
+        "sentiment_counts": {label: int((results["sentiment"] == label).sum()) if label in sentiment_classifier.class_names else None for label in sentiment_labels},
+        "emotion_counts": {label: int((results["emotion"] == label).sum()) if label in emotion_classifier.class_names else None for label in emotion_labels},
         "preview": results.head(100).to_dict(orient="records"),
         "download_url": f"/api/batch/{batch_id}/download",
     }

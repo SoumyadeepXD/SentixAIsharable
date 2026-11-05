@@ -10,14 +10,24 @@ import torch
 
 from predict_sentixai import load_checkpoint
 from sentixai_data import clean_and_tokenize, encode_tokens
-from sentixai_model import BiLSTMAttentionClassifier
+from sentixai_model import build_model
 
 
 def predict(text: str, model_dir: Path, model_name: str, device: torch.device) -> dict:
     checkpoint = load_checkpoint(model_dir / model_name, device)
-    vocabulary = json.loads((model_dir / "vocabulary.json").read_text(encoding="utf-8"))
-    model = BiLSTMAttentionClassifier(**checkpoint["model_config"]).to(device)
-    model.load_state_dict(checkpoint["model_state"])
+    if "vocabulary" in checkpoint:
+        vocabulary = checkpoint["vocabulary"]
+    elif (model_dir / f"{Path(model_name).stem}_vocabulary.json").exists():
+        vocabulary = json.loads((model_dir / f"{Path(model_name).stem}_vocabulary.json").read_text(encoding="utf-8"))
+    else:
+        vocabulary = json.loads((model_dir / "vocabulary.json").read_text(encoding="utf-8"))
+    model_type = checkpoint.get("model_type", checkpoint.get("model", "bilstm_attention"))
+    model_config = dict(checkpoint.get("model_config", checkpoint.get("config", {})))
+    vocab_size = model_config.pop("vocab_size", len(vocabulary))
+    num_classes = model_config.pop("num_classes", len(checkpoint["class_names"]))
+    model = build_model(model_type, vocab_size=vocab_size, num_classes=num_classes, **model_config).to(device)
+    state_dict = checkpoint.get("model_state", checkpoint.get("state_dict"))
+    model.load_state_dict(state_dict)
     model.eval()
     tokens = clean_and_tokenize(text)
     encoded = encode_tokens(tokens, vocabulary, checkpoint["max_length"])
@@ -39,13 +49,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--text", required=True)
     parser.add_argument("--sentiment-model-dir", default="outputs/artifacts")
+    parser.add_argument("--sentiment-model-name", default="bilstm_attention.pt")
     parser.add_argument("--emotion-model-dir", default="outputs/emotion/artifacts")
+    parser.add_argument("--emotion-model-name", default="emotion_bilstm_attention.pt")
     parser.add_argument("--device", choices=["cpu", "mps"], default="cpu")
     args = parser.parse_args()
     device = torch.device(args.device)
     output = {
-        "sentiment": predict(args.text, Path(args.sentiment_model_dir), "bilstm_attention.pt", device),
-        "emotion": predict(args.text, Path(args.emotion_model_dir), "emotion_bilstm_attention.pt", device),
+        "sentiment": predict(args.text, Path(args.sentiment_model_dir), args.sentiment_model_name, device),
+        "emotion": predict(args.text, Path(args.emotion_model_dir), args.emotion_model_name, device),
     }
     print(json.dumps(output, indent=2, ensure_ascii=False))
 
